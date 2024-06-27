@@ -1,0 +1,110 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+# ...
+def stitch_textures(texture_block, output_size, patch_size,overlap_size):
+    # 初始化输出图像
+    output_image = np.zeros((output_size[0], output_size[1], 3), dtype=np.uint8)
+    os=overlap_size
+    # 获取输入纹理块的尺寸
+    texture_height, texture_width, _ = texture_block.shape
+
+    # 按照行扫描顺序进行拼接
+    for y in range(0, output_size[0], patch_size):
+        for x in range(0, output_size[1], patch_size):
+            # 从输入纹理块中随机选择一个patch
+            start_x = np.random.randint(0, texture_width - patch_size)
+            start_y = np.random.randint(0, texture_height - patch_size)
+            patch = texture_block[start_y:start_y + patch_size, start_x:start_x + patch_size]
+            # 边界处理
+            end_y = min(y + patch_size, output_size[0])
+            end_x = min(x + patch_size, output_size[1])
+            patch = patch[:end_y - y, :end_x - x]
+
+            output_image[y:end_y, x:end_x] = patch
+            # 将patch放置在输出图像的相应位置
+            #if(y+patch_size>=output_size[0]):
+                #patch_size=output_size-y
+            #if(x+patch_size>=output_size[1]):
+                #patch_size=output_size[1]-x
+    return output_image
+...
+#能量函数
+def calculate_energy(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    grad_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+    grad_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+    energy = np.abs(grad_x) + np.abs(grad_y)
+    return energy
+
+def find_seam(energy):
+    rows, cols = energy.shape
+    seam = np.zeros(rows, dtype=int)
+    cost = np.copy(energy)
+    
+    for i in range(1, rows):
+        for j in range(cols):
+            min_cost = cost[i-1, j]
+            if j > 0:
+                min_cost = min(min_cost, cost[i-1, j-1])
+            if j < cols - 1:
+                min_cost = min(min_cost, cost[i-1, j+1])
+            cost[i, j] += min_cost
+    
+    seam[rows-1] = np.argmin(cost[rows-1])
+    for i in range(rows-2, -1, -1):
+        prev_col = seam[i+1]
+        min_col = prev_col
+        if prev_col > 0 and cost[i, prev_col-1] < cost[i, min_col]:
+            min_col = prev_col-1
+        if prev_col < cols - 1 and cost[i, prev_col+1] < cost[i, min_col]:
+            min_col = prev_col+1
+        seam[i] = min_col
+    return seam
+def blend_patches(patch1, patch2, seam):
+    blended_patch = patch1.copy()
+    rows, cols = patch1.shape[:2]
+    for i in range(rows):
+        for j in range(seam[i]):
+            alpha = j / seam[i]
+            blended_patch[i, j] = (1 - alpha) * patch1[i, j] + alpha * patch2[i, j]
+    return blended_patch
+def remove_seams(image, patch_size):
+    output_image = image.copy()
+    rows, cols = image.shape[:2]
+    for y in range(0, rows, patch_size):
+        for x in range(0, cols, patch_size):
+            if x > 0:
+                left_patch = output_image[y:y + patch_size, x - patch_size:x]
+                current_patch = output_image[y:y + patch_size, x:x + patch_size]
+                energy = calculate_energy(np.concatenate((left_patch, current_patch), axis=1))
+                seam = find_seam(energy)
+                blended_patch = blend_patches(left_patch, current_patch, seam)
+                output_image[y:y + patch_size, x:x + patch_size] = blended_patch
+
+            if y > 0:
+                top_patch = output_image[y - patch_size:y, x:x + patch_size]
+                current_patch = output_image[y:y + patch_size, x:x + patch_size]
+                energy = calculate_energy(np.concatenate((top_patch, current_patch), axis=0))
+                seam = find_seam(energy)
+                blended_patch = blend_patches(top_patch.transpose(1, 0, 2), current_patch.transpose(1, 0, 2), seam).transpose(1, 0, 2)
+                output_image[y:y + patch_size, x:x + patch_size] = blended_patch
+
+    return output_image
+# 消除缝隙
+
+
+
+# 读取输入纹理块
+texture_block = cv2.imread('/data_c/jzh/image-cut/stone.jpg')
+texture_block = cv2.cvtColor(texture_block, cv2.COLOR_BGR2RGB)
+
+# 定义输出图像尺寸和patch尺寸
+output_size = (512, 512)  # 输出图像的尺寸
+patch_size = 64  # patch的尺寸
+
+# 生成拼接后的图像
+output_image = stitch_textures(texture_block, output_size, patch_size,0)
+cv2.imwrite('output_image.jpg',output_image)
+final_image = remove_seams(output_image, patch_size)
+cv2.imwrite('output_image1.jpg',output_image)
