@@ -49,5 +49,5 @@ pip install -r requirements.txt
  - [ ] 完成说明文档的编写
  - [ ] to do
 ## 许可证
-此项目使用 MIT 许可证 - 详情请参阅 LICENSE 文件。
+Grubcut © 2 by sextent is licensed under Creative Commons Attribution-NonCommercial 4.0 International 
 ## 联系
